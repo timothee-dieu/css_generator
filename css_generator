@@ -1,0 +1,192 @@
+#!/usr/bin/php
+<?php
+
+include_once("sprite.class.php");
+include_once("cssgenerator.class.php");
+include_once("argumentparser.class.php");
+
+class SpriteCreator
+{
+	private $isRecursive = false;
+	private $outputImage = "sprite";
+	private $outputStyle = "style";
+	private $folder = "";
+	private $shortOptions = "";
+	private $longOptions = [];
+	private $override = 0;
+	private $padding = 0;
+	private $colMax = 0;
+	private $arguments = [];
+
+	function __construct($arguments)
+	{
+		$this->shortOptions = "hri:s:o:p:c:";
+		$this->longOptions = ["recursive", "output-image:",
+		 "output-style:", "override-size:", "padding:", "columns_number:",
+		 "help"];
+		$this->arguments = $arguments;
+		$this->parseArguments();
+	}
+
+	private function parseArguments()
+	{
+		$argParser = new ArgumentParser($this->arguments);
+		$argParser->addShortOptions($this->shortOptions);
+		$argParser->addLongOptions($this->longOptions);
+		$arguments = $argParser->parse();
+		foreach ($arguments as $key => $value)
+		{
+			if ($key === "r" || $key === "recursive")
+				$this->isRecursive = true;
+			elseif ($key === "i" || $key === "output-image")
+				$this->outputImage = $value;
+			elseif ($key === "s" || $key === "output-style")
+				$this->outputStyle = $value;
+			elseif ($key === "o" || $key === "override-size")
+				$this->override = $value;
+			elseif ($key === "p" || $key === "padding")
+				$this->padding = $value;
+			elseif ($key === "c" || $key === "columns_number")
+				$this->colMax = $value;
+			elseif ($key === 0)
+				$this->folder = $value;
+			elseif ($key === "h" || $key === "help")
+				$this->howTo();
+		}
+		
+	}
+
+	private function isPNG($file)
+	{
+		if (!file_exists($file) || !is_writable($file) || !is_readable($file))
+			return false;
+		try
+		{
+			$type = mime_content_type($file);
+			if ($type === "image/png"){
+				return true;
+			}
+		}
+		catch(Exception $e)
+		{
+			echo "$e->getMessage()\n";
+		}
+		return false;
+	}
+
+	private function isReady()
+	{
+		$error = false;
+
+		if (!is_dir($this->folder))
+		{
+			echo "[err.]: \"$this->folder\" is not a valid directory.\n";
+			$this->howTo();
+			$error = true;
+		}
+		if (!$this->isValidFileName($this->outputImage))
+		{
+			echo "[err.]: \"$this->outputImage\" is not a valid image name.\n";
+			$error = true;
+		}
+		if (!$this->isValidFileName($this->outputStyle))
+		{
+			echo "[err.]: \"$this->outputStyle\" is not a valid style name.\n";
+			$error = true;
+		}
+		return !$error;
+	}
+
+	private function isValidFileName($name)
+	{
+		if (!preg_match("#^[A-Za-z0-9_-]+$#", $name)
+			|| $name === "css_generator"
+			|| $name === "cssgenerator.class"
+			|| $name === "imginfo.class"
+			|| $name === "sprite.class"
+			|| $name === "argumentparser.class"
+			|| $name === "howTo"){
+			return false;
+		}
+		return true;
+	}
+
+	private function getFilesPath($folder)
+	{
+		if (is_dir($folder) === false){
+			return false;
+		}
+		if (($handle = opendir($folder)) === false){
+			return false;
+		}
+		$result = [];
+
+		while (($entry = readdir($handle)) !== false){
+			$path = realpath($folder . "/" . $entry);
+			if ($entry[0] == "."){
+					continue;
+			}
+			if (is_dir($path) && $this->isRecursive){
+				$result = array_merge($result, $this->getFilesPath($path));
+			}
+			else {
+				if (!$this->isPNG($path)){
+					continue;
+				}
+				$result[] = $path;
+			}
+		}
+		closedir($handle);
+		return $result;
+	}
+
+
+	private function howTo()
+	{
+		$howTo = file_get_contents("howTo");
+
+		if (!$howTo)
+		{
+			$howTo = "BLEH? howTo file doesn't exist!\n";
+		}
+		echo $howTo;
+	}
+
+	public function create()
+	{
+		if (!$this->isReady()){
+			return false;
+		}
+
+		$filesPath = $this->getFilesPath($this->folder);
+		if (count($filesPath) == 0)
+		{
+			echo "[err.]: No PNG files found in $this->folder\n";
+			return false;
+		}
+		$sprite = new Sprite($this->outputImage,
+		 $this->override, $this->colMax);
+
+		foreach ($filesPath as $path)
+		{
+			$sprite->add($path);
+		}
+		if ($sprite->save() !== false)
+		{
+			$cssGenerator = new CssGenerator($sprite,
+			 $this->padding,
+			 $this->outputStyle,
+			 $this->override);
+			$cssGenerator->save();
+		}
+		
+	}
+}
+
+$args = [];
+for ($i = 1; $i < $argc; $i++)
+{
+	$args[] = $argv[$i];
+}
+$spriteCreator = new SpriteCreator($args);
+$spriteCreator->create();
